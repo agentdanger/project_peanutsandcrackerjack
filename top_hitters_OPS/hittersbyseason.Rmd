@@ -1,0 +1,510 @@
+---
+title: "Team Analysis by Season | Data Exploration"
+author: "Courtney Perigo"
+date: "10/20/2019"
+output: html_document
+---
+
+Import odbc library and check for PostgreSQL driver.
+```{r}
+library(odbc)
+sort(unique(odbcListDrivers()[[1]]))
+```
+
+### Connect to Baseball Database
+> Code below uses the odbc library to log in to the postgres database using my login and password.  I do this so no user names or passwords are stored in the code. 
+
+```{r}
+con <- dbConnect(odbc(), 
+                 Driver = "PostgreSQL Unicode(x64)",
+                 Server = "localhost",
+                 Database = "baseballdatabank",
+                 UID = rstudioapi::askForPassword("Database user"),
+                 PWD = rstudioapi::askForPassword("Database password"),
+                 Port = 5433)
+```
+
+### Pull Data into Dataframe
+> Grab both a player level detail of batting (a view I created in the database) as well as a team performance table (standard with the Chadwick baseball database.)
+
+```{r}
+teams_odbc <- dbSendQuery(con, "SELECT * FROM public.teams")
+players_odbc <- dbSendQuery(con, "SELECT * FROM public.v_player_batting_majors")
+teams <- dbFetch(teams_odbc)
+players <- dbFetch(players_odbc)
+```
+
+### Explore Data
+
+```{r}
+names(teams)
+unique(teams$lgID)
+```
+
+### Transform Data
+> The following code creates our calculated metrics / standard batting statistics of interest.
+
+```{r}
+names(teams)[names(teams) == "2B"] <- "b_2B"
+names(teams)[names(teams) == "3B"] <- "b_3B"
+teams$G <- as.numeric(teams$G)
+teams$W <- as.numeric(teams$W)
+teams$L <- as.numeric(teams$L)
+teams$R <- as.numeric(teams$R)
+teams$AB <- as.numeric(teams$AB)
+teams$H <- as.numeric(teams$H)
+teams$b_2B <- as.numeric(teams$"b_2B")
+teams$b_3B <- as.numeric(teams$"b_3B")
+teams$HR <- as.numeric(teams$HR)
+teams$BB <- as.numeric(teams$BB)
+teams$SO <- as.numeric(teams$SO)
+teams$SB <- as.numeric(teams$SB)
+teams$CS <- as.numeric(teams$CS)
+teams$HBP <- as.numeric(teams$HBP)
+teams$SF <- as.numeric(teams$SF)
+teams$RA <- as.numeric(teams$RA)
+teams$ER <- as.numeric(teams$ER)
+teams$ERA <- as.numeric(teams$ERA)
+teams$SHO <- as.numeric(teams$SHO)
+teams$IPouts <- as.numeric(teams$IPouts)
+teams$HA <- as.numeric(teams$HA)
+teams$HRA <- as.numeric(teams$HRA)
+teams$BBA <- as.numeric(teams$BBA)
+teams$SOA <- as.numeric(teams$SOA)
+teams$E <- as.numeric(teams$E)
+teams$DP <- as.numeric(teams$DP)
+teams$FP <- as.numeric(teams$FP)
+teams$BPF <- as.numeric(teams$BPF)
+teams$PPF <- as.numeric(teams$PPF)
+
+
+teams$SLG <- (teams$H + teams$b_2B + (teams$b_3B*2) + (teams$HR*3))/teams$AB
+teams$AVG <- (teams$H)/teams$AB
+teams$OBP <- (teams$H + teams$BB + teams$HBP)/(teams$AB+teams$BB+teams$HBP+teams$SF)
+teams$OPS <- teams$OBP+teams$SLG
+```
+
+### Clean the data.
+> Subset to 1970 when complete stats were kept; remove short seasons due to strike.
+
+```{r}
+teams_majors <- subset(teams, lgID = c("NA", "AL") )
+teams_1970 <- subset(teams, yearID >1969)
+teams_1970 <- subset(teams_1970, G > 156)
+summary(teams_1970)
+unique(teams_1970$lgID)
+unique(teams_1970$teamID)
+```
+
+### Explore Data
+> Here we take a look at the normal curves produced when we look at team level statistics.  This suggests an analysis that's pretty straight forward from here on.
+
+```{r}
+par(mfrow=c(2,2))
+hist(teams_1970$G)
+hist(teams_1970$R)
+hist(teams_1970$OBP)
+hist(teams_1970$AVG)
+hist(teams_1970$SLG)
+hist(teams_1970$OPS)
+hist(teams_1970$HR)
+hist(teams_1970$SO)
+```
+
+```{r}
+library(psych)
+pairs.panels(teams_1970[,7:20], 
+             method = "pearson", # correlation method
+             hist.col = "#00AFBB",
+             density = TRUE,  # show density plots
+             ellipses = TRUE # show correlation ellipses
+             )
+
+```
+
+### Run all correlations whith runs created
+> This is the goal of our project.  Looking for the most correlated metric to runs.
+
+```{r}
+reg1 <- lm(R~AVG, data=teams_1970)
+with(teams_1970, plot(teams_1970$AVG, teams_1970$R))
+abline(reg1)
+mtext(paste("correlation: ", round(cor(teams_1970$AVG, teams_1970$R), 3)), side=1, line=3.5, at=.285)
+
+reg2 <- lm(R~HR, data=teams_1970)
+with(teams_1970, plot(teams_1970$HR, teams_1970$R))
+abline(reg2)
+mtext(paste("correlation: ", round(cor(teams_1970$HR, teams_1970$R), 3)), side=1, line=3.5, at=225)
+
+reg3 <- lm(R~SLG, data=teams_1970)
+with(teams_1970, plot(teams_1970$SLG, teams_1970$R))
+abline(reg3)
+mtext(paste("correlation: ", round(cor(teams_1970$SLG, teams_1970$R), 3)), side=1, line=3.5, at=.475)
+
+reg4 <- lm(R~OBP, data=teams_1970)
+with(teams_1970, plot(teams_1970$OBP, teams_1970$R))
+abline(reg4)
+mtext(paste("correlation: ", round(cor(teams_1970$OBP, teams_1970$R), 3)), side=1, line=3.5, at=.36)
+
+reg5 <- lm(R~OPS, data=teams_1970)
+with(teams_1970, plot(teams_1970$OPS, teams_1970$R))
+abline(reg5)
+mtext(paste("correlation: ", round(cor(teams_1970$OPS, teams_1970$R), 3)), side=1, line=3.5, at=.825)
+```
+
+### Create fancy summary of Corr.
+> This code creates a nice, compact chart of our findings.  A lot of code for a simple chart, unfortunately.
+
+```{r}
+RunsCorr<- function(x) {
+  # correlation to quality
+  return(cor(x, teams_1970$R))
+}
+## subset the data to what we care about by removing columns we don't need (select=-c <- note the negative c)
+teams_1970_focus <- subset(teams_1970, select=-c(yearID,
+                                                 lgID,
+                                                 teamID,
+                                                 franchID,
+                                                 divID,
+                                                 Rank,
+                                                 W,
+                                                 L,
+                                                 DivWin,
+                                                 WCWin,
+                                                 LgWin,
+                                                 WSWin,
+                                                 R,
+                                                 RA,
+                                                 ER,
+                                                 ERA,
+                                                 CG,
+                                                 SHO,
+                                                 SV,
+                                                 IPouts,
+                                                 HA,
+                                                 HRA,
+                                                 BBA,
+                                                 SOA,
+                                                 E,
+                                                 DP,
+                                                 FP,
+                                                 name,
+                                                 park,
+                                                 attendance,
+                                                 BPF,
+                                                 PPF,
+                                                 teamIDBR,
+                                                 teamIDlahman45,
+                                                 teamIDretro,
+                                                 id
+                                                 ))
+
+team_runs_corr <- sapply(teams_1970_focus, RunsCorr)
+
+
+t<-order(team_runs_corr, decreasing = TRUE)
+temp<-team_runs_corr[t]
+#temp
+rownames(temp)<-rownames(team_runs_corr)[t]
+team_runs_corr<-cbind(temp)
+colnames(team_runs_corr)<-c("Correlation with Runs")
+
+team_runs_corr
+
+
+```
+
+```{r}
+names(players)
+```
+
+### Select the top players by OPS
+> Here is our first attempt to summarize the best players by OPS.  Note that we're missing some players.  We take care of that in the next few steps.
+
+```{r}
+players$SLG <- (players$h + players$b_2B + (players$b_3B*2) + (players$hr*3))/players$ab
+players$AVG <- (players$h)/players$ab
+players$OBP <- (players$h + players$bb + players$hbp)/(players$ab+players$bb+players$hbp+players$sf)
+players$OPS <- players$OBP+players$SLG
+players$full_name <- paste(players$namefirst, " ", players$namelast)
+
+players_300ABs <- subset(players, players$ab > 250)
+
+
+sort_ops = players_300ABs[order(players_300ABs$OPS, decreasing = TRUE),]
+players_ops <- subset(sort_ops, select=c(full_name, OPS))
+head(players_ops, 15)
+```
+
+### Random Forest to predict missing values.
+> The next chunk of code is used to train models that can predict missing values using values collected. Things like CS, HBP, etc were not collected before 1954; so our random forest model will fill in the gaps for us.  Note that we have to tune our models; and you'll see this done in the code below.
+
+```{r}
+library(randomForest)
+```
+
+```{r}
+summary(players)
+```
+
+```{r}
+players_comp <- na.omit(players)
+fit1 <- randomForest(ibb~
+                       ab+
+                       r+
+                       h+
+                       b_2B+
+                       b_3B+
+                       hr+
+                       rbi+
+                       bb+
+                       so,
+                     data=players_comp,
+                     nTree=500)
+
+fit1
+```
+
+```{r}
+which.min(fit1$mse)
+
+df_train_tune_x <- subset(players_comp, select=c(ab,r,h,b_2B,b_3B,hr,rbi,bb,so))
+
+tuned_rf <- tuneRF(df_train_tune_x, 
+                   players_comp$ibb,
+                   stepFactor = 2,
+                   ntreeTry = 500)
+```
+
+```{r}
+fit_ibb <- randomForest(ibb~
+                       ab+
+                       r+
+                       h+
+                       b_2B+
+                       b_3B+
+                       hr+
+                       rbi+
+                       bb+
+                       so,
+                     data=players_comp,
+                     ntree=231,
+                     mtry=6)
+
+fit_ibb
+
+importance(fit_ibb)
+```
+
+```{r}
+fit2 <- randomForest(cs~
+                       ab+
+                       r+
+                       h+
+                       b_2B+
+                       b_3B+
+                       hr+
+                       rbi+
+                       bb+
+                       so,
+                     data=players_comp,
+                     nTree=500)
+
+fit2
+```
+
+```{r}
+which.min(fit2$mse)
+
+tuned_rf <- tuneRF(df_train_tune_x, 
+                   players_comp$cs,
+                   stepFactor = 2,
+                   ntreeTry = 500)
+```
+
+### Note, random forest models below were not tuned optimally in the 2nd run of this code. 
+> This is due to the time it takes to run these algorithms.  Normally, an analyst would tune each random forest by selecting the optimal number of trees to create as well as tuning the number of variables to try. This is done with the graphs above.  In the first run of these models to produce the blog, all RF models were tuned to the optimum setting at the time of running.
+
+```{r}
+fit_cs <- randomForest(cs~
+                       ab+
+                       r+
+                       h+
+                       b_2B+
+                       b_3B+
+                       hr+
+                       rbi+
+                       bb+
+                       so,
+                     data=players_comp,
+                     ntree=444,
+                     mtry=3)
+
+fit_cs
+
+importance(fit_cs)
+```
+
+```{r}
+fit3 <- randomForest(hbp~
+                       ab+
+                       r+
+                       h+
+                       b_2B+
+                       b_3B+
+                       hr+
+                       rbi+
+                       bb+
+                       so,
+                     data=players_comp,
+                     nTree=500)
+
+fit3
+```
+
+```{r}
+which.min(fit3$mse)
+```
+
+
+```{r}
+
+
+tuned_rf <- tuneRF(df_train_tune_x, 
+                   players_comp$hbp,
+                   stepFactor = 2,
+                   ntreeTry = 500)
+```
+
+```{r}
+fit_hbp <- randomForest(hbp~
+                       ab+
+                       r+
+                       h+
+                       b_2B+
+                       b_3B+
+                       hr+
+                       rbi+
+                       bb+
+                       so,
+                     data=players_comp,
+                     ntree=497,
+                     mtry=2)
+
+fit_hbp
+
+importance(fit_hbp)
+```
+
+```{r}
+fit4 <- randomForest(sf~
+                       ab+
+                       r+
+                       h+
+                       b_2B+
+                       b_3B+
+                       hr+
+                       rbi+
+                       bb+
+                       so,
+                     data=players_comp,
+                     nTree=500)
+
+fit4
+```
+
+```{r}
+which.min(fit4$mse)
+```
+
+
+```{r}
+tuned_rf <- tuneRF(df_train_tune_x, 
+                   players_comp$sf,
+                   stepFactor = 2,
+                   ntreeTry = 500)
+```
+
+```{r}
+fit_sf <- randomForest(sf~
+                       ab+
+                       r+
+                       h+
+                       b_2B+
+                       b_3B+
+                       hr+
+                       rbi+
+                       bb+
+                       so,
+                     data=players_comp,
+                     ntree=436,
+                     mtry=6)
+
+fit_sf
+
+importance(fit_sf)
+```
+
+### Predict values of hbp and sf.
+> The new values will be used in the calculation of OPS for our golden age players.  Note the new hbp_real and sf_real which looks for the reported value of each metric and if not found replaces it with our prediction.  Those new metrics will be used in our new OPS calculation called "OPS_real."
+
+```{r}
+players$hbp_pred <- predict(fit_hbp, newdata = players)
+players$sf_pred <- predict(fit_sf, newdata = players)
+
+players$hbp_pred <- as.numeric(round(players$hbp_pred, 0))
+players$sf_pred <- as.numeric(round(players$sf_pred, 0))
+
+players$hbp_real <- ifelse(is.na(players$hbp), players$hbp_pred, players$hbp)
+players$sf_real <- ifelse(is.na(players$sf), players$sf_pred, players$sf)
+```
+
+### NEW OPS Calculation
+> Here we created the new OPS calculation using our new "hbp_real" and "sf_real" values for all players.
+
+```{r}
+players$SLG_real <- (players$h + players$b_2B + (players$b_3B*2) + (players$hr*3))/players$ab
+players$AVG_real <- (players$h)/players$ab
+players$OBP_real <- (players$h + players$bb + players$hbp_real)/(players$ab+players$bb+players$hbp_real+players$sf_real)
+players$OPS_real <- players$OBP_real+players$SLG_real
+players$full_name <- paste(players$namefirst, " ", players$namelast)
+
+players_300ABs <- subset(players, players$ab > 250)
+
+
+sort_ops = players_300ABs[order(players_300ABs$OPS_real, decreasing = TRUE),]
+players_ops <- subset(sort_ops, select=c(full_name, OPS_real))
+head(players_ops, 15)
+```
+
+### Creating new visualizations
+> The code below completes the project by creating visuals of our comopleted dataset and summarizing our findings.
+
+```{r}
+par(mar=c(5.1, max(4.1,max(nchar(players_ops$full_name))/2.8) ,4.1 ,2.1))
+barplot_ops <- subset(players_ops[15:1,])
+bp <- barplot(barplot_ops$OPS_real, 
+              names= barplot_ops$full_name, 
+              las=2,horiz=TRUE, 
+              cex.names = 0.75, 
+              col = "lightblue", 
+              xlim = c(0, 1.35),
+              main="Top 15 MLB Offensive Players Ever | Measured by OPS")
+text(barplot_ops$OPS_real, bp, labels = round(barplot_ops$OPS_real, 4), col="black", adj = -0.5, cex=0.75)
+```
+
+```{r}
+line <- mean(players_ops$OPS_real, na.rm = TRUE)+(1*sd(players_ops$OPS_real, na.rm = TRUE))
+hist(players_ops$OPS_real, col="lightblue", main="Histogram of All-time OPS by Player | >250 Career At Bats")
+abline(v=line, col="red")
+text(.99, y=2000, labels = "Top 33 Percentile:")
+text(.99, y=1750, labels = "> 0.78 OPS")
+```
+
+```{r}
+
+hist(players$r, main = "Histogram of Career Runs Created by Player", col = "lightblue")
+hist(teams$R, main = "Histogram of Seasonal Runs Created by Team", col = "lightblue")
+```
+
+
